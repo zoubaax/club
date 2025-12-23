@@ -34,18 +34,21 @@ export interface Database {
           id: string
           name: string
           description: string | null
+          score: number | null
           created_at: string
         }
         Insert: {
           id?: string
           name: string
           description?: string | null
+          score?: number | null
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
           description?: string | null
+          score?: number | null
           created_at?: string
         }
       }
@@ -98,6 +101,32 @@ export interface Database {
           rating?: number | null
           feedback?: string | null
           week_start_date?: string
+          created_at?: string
+        }
+      }
+      team_members: {
+        Row: {
+          id: string
+          team_id: string
+          name: string
+          email: string | null
+          role: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          team_id: string
+          name: string
+          email?: string | null
+          role?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          team_id?: string
+          name?: string
+          email?: string | null
+          role?: string | null
           created_at?: string
         }
       }

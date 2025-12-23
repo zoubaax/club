@@ -361,6 +361,102 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {/* Top Teams Leaderboard */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-6 py-5 bg-gradient-to-r from-amber-600 to-yellow-600 dark:from-amber-700 dark:to-yellow-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">🏆 Top Teams</h2>
+                    <p className="text-amber-100 dark:text-amber-200 mt-1">
+                      Ranked by score
+                    </p>
+                  </div>
+                  <Link
+                    to="/admin/teams"
+                    className="text-sm font-medium text-white hover:text-amber-100 transition-colors"
+                  >
+                    View all
+                  </Link>
+                </div>
+              </div>
+              <div className="p-6">
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 dark:border-amber-400"></div>
+                  </div>
+                ) : (() => {
+                  // Sort teams by score and assign rankings
+                  const sortedTeams = [...teams].sort((a, b) => {
+                    if (a.score !== null && a.score !== undefined && b.score !== null && b.score !== undefined) {
+                      return b.score - a.score
+                    }
+                    if (a.score !== null && a.score !== undefined) return -1
+                    if (b.score !== null && b.score !== undefined) return 1
+                    return 0
+                  })
+                  
+                  const teamsWithRanking = sortedTeams.map((team, index) => {
+                    let rank = index + 1
+                    if (index > 0 && 
+                        team.score !== null && 
+                        team.score !== undefined &&
+                        sortedTeams[index - 1].score !== null &&
+                        sortedTeams[index - 1].score !== undefined &&
+                        team.score === sortedTeams[index - 1].score) {
+                      rank = teamsWithRanking[index - 1].rank
+                    }
+                    return { ...team, rank }
+                  }).filter(team => team.score !== null && team.score !== undefined)
+                  
+                  if (teamsWithRanking.length === 0) {
+                    return (
+                      <div className="text-center py-12">
+                        <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                        </svg>
+                        <h3 className="mt-4 text-sm font-medium text-gray-900 dark:text-gray-100">No scores yet</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Add scores to teams to see rankings</p>
+                      </div>
+                    )
+                  }
+                  
+                  return (
+                    <div className="space-y-3">
+                      {teamsWithRanking.slice(0, 5).map((team) => (
+                        <div key={team.id} className="flex items-center p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all hover:shadow-md">
+                          <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm mr-4 ${
+                            team.rank === 1 
+                              ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' 
+                              : team.rank === 2
+                              ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
+                              : team.rank === 3
+                              ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white'
+                              : 'bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 text-white'
+                          }`}>
+                            {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : team.rank === 3 ? '🥉' : `#${team.rank}`}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{team.name}</h4>
+                            <div className="flex items-center mt-1">
+                              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                Score: {parseFloat(team.score).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                          <Link
+                            to={`/admin/teams`}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors ml-2"
+                          >
+                            View
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+
             {/* Recent Teams */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="px-6 py-5 bg-gradient-to-r from-gray-700 to-gray-800 dark:from-gray-800 dark:to-gray-900">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTeams } from '../hooks/useTeams'
 import { useNotes } from '../hooks/useNotes'
 import { useWeeklyEvaluations } from '../hooks/useWeeklyEvaluations'
+import { useTeamMembers } from '../hooks/useTeamMembers'
 import { supabase } from '../lib/supabase'
 
 export default function TeamsManagement() {
@@ -15,23 +16,61 @@ export default function TeamsManagement() {
   const [success, setSuccess] = useState('')
   const [formData, setFormData] = useState({
     name: '',
-    description: ''
+    description: '',
+    score: ''
   })
 
   const { notes: teamNotes, loading: notesLoading } = useNotes(viewingTeam?.id)
   const { evaluations: teamEvaluations, loading: evaluationsLoading } = useWeeklyEvaluations(viewingTeam?.id)
+  const { members: teamMembers, loading: membersLoading, addMember, removeMember } = useTeamMembers(viewingTeam?.id)
+  const [showMemberForm, setShowMemberForm] = useState(false)
+  const [memberFormData, setMemberFormData] = useState({ name: '', email: '', role: '' })
+  const [memberFormLoading, setMemberFormLoading] = useState(false)
+
+  // Sort teams by score (descending, nulls last) and assign rankings
+  const sortedTeams = [...teams].sort((a, b) => {
+    // Teams with scores come first
+    if (a.score !== null && a.score !== undefined && b.score !== null && b.score !== undefined) {
+      return b.score - a.score // Descending order
+    }
+    if (a.score !== null && a.score !== undefined) return -1
+    if (b.score !== null && b.score !== undefined) return 1
+    return 0 // Both null, maintain original order
+  })
+
+  // Assign rankings (same score = same rank)
+  const teamsWithRanking = []
+  let currentRank = 1
+  sortedTeams.forEach((team, index) => {
+    let rank = null
+    if (team.score !== null && team.score !== undefined) {
+      // If this team has the same score as the previous team, use the same rank
+      if (index > 0 && 
+          sortedTeams[index - 1].score !== null &&
+          sortedTeams[index - 1].score !== undefined &&
+          team.score === sortedTeams[index - 1].score) {
+        rank = teamsWithRanking[index - 1].rank
+      } else {
+        rank = currentRank
+        currentRank++
+      }
+    }
+    teamsWithRanking.push({ ...team, rank })
+  })
 
   // Initialize form when editing team changes
   useEffect(() => {
     if (editingTeam) {
       setFormData({
         name: editingTeam.name || '',
-        description: editingTeam.description || ''
+        description: editingTeam.description || '',
+        score: editingTeam.score !== null && editingTeam.score !== undefined ? editingTeam.score.toString() : ''
       })
     } else {
       setFormData({
         name: '',
-        description: ''
+        description: '',
+        score: ''
       })
     }
   }, [editingTeam])
@@ -97,7 +136,8 @@ export default function TeamsManagement() {
       // Only include valid database columns
       const validData = {
         name: formData.name,
-        description: formData.description || null
+        description: formData.description || null,
+        score: formData.score ? parseFloat(formData.score) : null
       }
 
       if (editingTeam) {
@@ -258,6 +298,25 @@ export default function TeamsManagement() {
                     placeholder="Enter team description"
                     disabled={formLoading}
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="score" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Score
+                  </label>
+                  <input
+                    type="number"
+                    id="score"
+                    name="score"
+                    step="0.01"
+                    min="0"
+                    value={formData.score}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
+                    placeholder="Enter team score (optional)"
+                    disabled={formLoading}
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional numeric score for the team</p>
                 </div>
 
                 <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -494,6 +553,18 @@ export default function TeamsManagement() {
                         {viewingTeam.description}
                       </p>
                     )}
+                    {viewingTeam.score !== null && viewingTeam.score !== undefined && (
+                      <div className="mt-3">
+                        <div className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
+                          <svg className="h-5 w-5 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                          </svg>
+                          <span className="text-base font-bold text-amber-800 dark:text-amber-300">
+                            Score: {parseFloat(viewingTeam.score).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -531,6 +602,143 @@ export default function TeamsManagement() {
                   Delete
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Team Members Section */}
+          <div className="mb-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-700 dark:to-cyan-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Team Members</h2>
+                  <p className="text-blue-100 dark:text-blue-200 mt-1">Manage team members</p>
+                </div>
+                <button
+                  onClick={() => setShowMemberForm(true)}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 dark:bg-black/20 dark:hover:bg-black/30 text-white rounded-lg transition-colors text-sm font-medium"
+                >
+                  + Add Member
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {showMemberForm && (
+                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Team Member</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={memberFormData.name}
+                        onChange={(e) => setMemberFormData({ ...memberFormData, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                        placeholder="Member name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={memberFormData.email}
+                        onChange={(e) => setMemberFormData({ ...memberFormData, email: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                        placeholder="member@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Role
+                      </label>
+                      <input
+                        type="text"
+                        value={memberFormData.role}
+                        onChange={(e) => setMemberFormData({ ...memberFormData, role: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                        placeholder="e.g., Developer, Designer"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={async () => {
+                          if (!memberFormData.name.trim()) return
+                          setMemberFormLoading(true)
+                          const result = await addMember({
+                            name: memberFormData.name.trim(),
+                            email: memberFormData.email.trim() || null,
+                            role: memberFormData.role.trim() || null
+                          })
+                          if (!result.error) {
+                            setMemberFormData({ name: '', email: '', role: '' })
+                            setShowMemberForm(false)
+                          }
+                          setMemberFormLoading(false)
+                        }}
+                        disabled={memberFormLoading || !memberFormData.name.trim()}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMemberForm(false)
+                          setMemberFormData({ name: '', email: '', role: '' })
+                        }}
+                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {membersLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400"></div>
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <h3 className="mt-4 text-sm font-medium text-gray-900 dark:text-gray-100">No members yet</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Add team members to get started</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {teamMembers.map((member) => (
+                    <div key={member.id} className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-all">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900 dark:text-white">{member.name}</h4>
+                          {member.role && (
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{member.role}</p>
+                          )}
+                          {member.email && (
+                            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{member.email}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Remove ${member.name} from the team?`)) {
+                              await removeMember(member.id)
+                            }
+                          }}
+                          className="ml-2 p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -713,6 +921,46 @@ export default function TeamsManagement() {
             </button>
           </div>
 
+          {/* Top Teams Banner */}
+          {(() => {
+            const topTeams = teamsWithRanking.filter(t => t.score !== null && t.score !== undefined).slice(0, 3)
+            if (topTeams.length === 0) return null
+            
+            return (
+              <div className="mb-8 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 dark:from-amber-900/20 dark:via-yellow-900/20 dark:to-amber-900/20 rounded-2xl border-2 border-amber-200 dark:border-amber-800 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center">
+                    <svg className="h-8 w-8 text-amber-600 dark:text-amber-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                    </svg>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Top Teams Leaderboard</h2>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {topTeams.map((team) => (
+                    <div key={team.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-amber-200 dark:border-amber-800 shadow-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
+                          team.rank === 1 
+                            ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' 
+                            : team.rank === 2
+                            ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
+                            : 'bg-gradient-to-br from-amber-600 to-amber-700 text-white'
+                        }`}>
+                          {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : '🥉'}
+                        </div>
+                        <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                          {parseFloat(team.score).toFixed(2)}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white truncate">{team.name}</h3>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/20 rounded-2xl p-6 shadow-sm border border-indigo-100 dark:border-indigo-800/30">
@@ -837,7 +1085,7 @@ export default function TeamsManagement() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {teams.map((team) => (
+            {teamsWithRanking.map((team) => (
               <div 
                 key={team.id} 
                 className="group bg-white dark:bg-gray-800 rounded-2xl shadow-lg dark:shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-2xl dark:hover:shadow-3xl hover:border-indigo-300 dark:hover:border-indigo-600 transition-all duration-300 transform hover:-translate-y-1"
@@ -846,6 +1094,19 @@ export default function TeamsManagement() {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-3">
+                        {team.score !== null && team.score !== undefined && (
+                          <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${
+                            team.rank === 1 
+                              ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' 
+                              : team.rank === 2
+                              ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
+                              : team.rank === 3
+                              ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white'
+                              : 'bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 text-white'
+                          }`}>
+                            {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : team.rank === 3 ? '🥉' : `#${team.rank}`}
+                          </div>
+                        )}
                         <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-xl shadow-sm">
                           <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -862,6 +1123,19 @@ export default function TeamsManagement() {
                         <p className="text-gray-600 dark:text-gray-300 line-clamp-2 mb-4 leading-relaxed">
                           {team.description}
                         </p>
+                      )}
+                      
+                      {team.score !== null && team.score !== undefined && (
+                        <div className="mb-4">
+                          <div className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
+                            <svg className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                            </svg>
+                            <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                              Score: {parseFloat(team.score).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
                       )}
                       
                       <div className="flex flex-wrap items-center gap-3 mb-4">
