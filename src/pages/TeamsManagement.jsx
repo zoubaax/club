@@ -1,38 +1,72 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTeams } from '../hooks/useTeams'
 import { useNotes } from '../hooks/useNotes'
 import { useWeeklyEvaluations } from '../hooks/useWeeklyEvaluations'
 import { supabase } from '../lib/supabase'
-import TeamForm from '../components/TeamForm'
-import DeleteConfirmation from '../components/DeleteConfirmation'
 
 export default function TeamsManagement() {
   const { teams, loading, refetch } = useTeams()
   const [editingTeam, setEditingTeam] = useState(null)
-  const [showForm, setShowForm] = useState(false)
+  const [showFormModal, setShowFormModal] = useState(false)
   const [deleteTeam, setDeleteTeam] = useState(null)
   const [viewingTeam, setViewingTeam] = useState(null)
   const [formLoading, setFormLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [formData, setFormData] = useState({
+    name: '',
+    description: ''
+  })
 
   const { notes: teamNotes, loading: notesLoading } = useNotes(viewingTeam?.id)
   const { evaluations: teamEvaluations, loading: evaluationsLoading } = useWeeklyEvaluations(viewingTeam?.id)
 
+  // Initialize form when editing team changes
+  useEffect(() => {
+    if (editingTeam) {
+      setFormData({
+        name: editingTeam.name || '',
+        description: editingTeam.description || ''
+      })
+    } else {
+      setFormData({
+        name: '',
+        description: ''
+      })
+    }
+  }, [editingTeam])
+
+  // Handle escape key for modal
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && showFormModal) {
+        handleCancelForm()
+      }
+    }
+    
+    if (showFormModal) {
+      document.addEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'hidden'
+    }
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'unset'
+    }
+  }, [showFormModal])
+
   const handleCreate = () => {
     setEditingTeam(null)
-    setShowForm(true)
+    setShowFormModal(true)
     setError('')
     setSuccess('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleEdit = (team) => {
     setEditingTeam(team)
-    setShowForm(true)
+    setShowFormModal(true)
     setError('')
     setSuccess('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleView = (team) => {
@@ -45,16 +79,31 @@ export default function TeamsManagement() {
     setViewingTeam(null)
   }
 
-  const handleSubmit = async (formData) => {
+  const handleFormChange = (e) => {
+    const { name, value, type, checked } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }))
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
     setFormLoading(true)
     setError('')
     setSuccess('')
 
     try {
+      // Only include valid database columns
+      const validData = {
+        name: formData.name,
+        description: formData.description || null
+      }
+
       if (editingTeam) {
         const { error: updateError } = await supabase
           .from('teams')
-          .update(formData)
+          .update(validData)
           .eq('id', editingTeam.id)
 
         if (updateError) throw updateError
@@ -62,7 +111,7 @@ export default function TeamsManagement() {
       } else {
         const { error: createError } = await supabase
           .from('teams')
-          .insert([formData])
+          .insert([validData])
 
         if (createError) throw createError
         setSuccess('Team created successfully!')
@@ -70,8 +119,9 @@ export default function TeamsManagement() {
 
       await refetch()
       
+      // Close modal after successful submission
       setTimeout(() => {
-        setShowForm(false)
+        setShowFormModal(false)
         setEditingTeam(null)
         setSuccess('')
       }, 1500)
@@ -112,10 +162,305 @@ export default function TeamsManagement() {
   }
 
   const handleCancelForm = () => {
-    setShowForm(false)
+    setShowFormModal(false)
     setEditingTeam(null)
     setError('')
     setSuccess('')
+  }
+
+  // Team Form Modal Component
+  const TeamFormModal = () => {
+    if (!showFormModal) return null
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 z-50 transition-all duration-300 animate-fade-in"
+          onClick={handleCancelForm}
+        >
+          <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" />
+        </div>
+
+        {/* Modal */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden bg-white dark:bg-gray-900 rounded-2xl shadow-2xl dark:shadow-3xl transform transition-all duration-300 animate-modal-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-8 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {editingTeam ? 'Edit Team' : 'Create New Team'}
+                  </h2>
+                  <p className="text-indigo-100 dark:text-indigo-300 mt-1">
+                    {editingTeam ? 'Update team information' : 'Add a new team to your organization'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCancelForm}
+                  className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                  disabled={formLoading}
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mx-8 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                <div className="flex items-center text-red-700 dark:text-red-400">
+                  <svg className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-medium">{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Form Content */}
+            <div className="p-8 overflow-y-auto max-h-[calc(90vh-180px)]">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Team Name *
+                  </label>
+                  <input
+                    type="text"
+                    id="name"
+                    name="name"
+                    required
+                    value={formData.name}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
+                    placeholder="Enter team name"
+                    disabled={formLoading}
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    rows={4}
+                    value={formData.description}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all resize-none"
+                    placeholder="Enter team description"
+                    disabled={formLoading}
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={handleCancelForm}
+                    className="px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 transition-all"
+                    disabled={formLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={formLoading}
+                    className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none disabled:hover:shadow-lg"
+                  >
+                    {formLoading ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        {editingTeam ? 'Updating...' : 'Creating...'}
+                      </span>
+                    ) : (
+                      editingTeam ? 'Update Team' : 'Create Team'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Loading Overlay */}
+            {formLoading && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+                  <p className="mt-4 text-gray-700 dark:text-gray-300 font-medium">
+                    {editingTeam ? 'Updating team...' : 'Creating team...'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // Delete Confirmation Modal Component
+  const DeleteConfirmationModal = () => {
+    const isOpen = !!deleteTeam
+
+    useEffect(() => {
+      const handleEscape = (e) => {
+        if (e.key === 'Escape' && isOpen) {
+          setDeleteTeam(null)
+        }
+      }
+      
+      if (isOpen) {
+        document.addEventListener('keydown', handleEscape)
+        document.body.style.overflow = 'hidden'
+      }
+      
+      return () => {
+        document.removeEventListener('keydown', handleEscape)
+        document.body.style.overflow = 'unset'
+      }
+    }, [isOpen])
+
+    if (!isOpen) return null
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 z-50 transition-all duration-300 animate-fade-in"
+          onClick={() => setDeleteTeam(null)}
+        >
+          <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" />
+        </div>
+
+        {/* Modal */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="relative w-full max-w-md overflow-hidden bg-white dark:bg-gray-900 rounded-2xl shadow-2xl dark:shadow-3xl transform transition-all duration-300 scale-100 opacity-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-red-600 to-pink-600 dark:from-red-700 dark:to-pink-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="p-2 bg-white/20 rounded-lg mr-3">
+                    <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.856-.833-2.584 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Delete Team</h2>
+                </div>
+                <button
+                  onClick={() => setDeleteTeam(null)}
+                  className="p-1 text-white hover:bg-white/10 rounded-lg transition-colors"
+                  disabled={formLoading}
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-gray-300 mb-4">
+                  Are you sure you want to delete this team? This action cannot be undone and will permanently delete:
+                </p>
+                
+                {deleteTeam?.name && (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl mb-4">
+                    <p className="text-red-800 dark:text-red-400 font-medium">{deleteTeam.name}</p>
+                  </div>
+                )}
+                
+                <ul className="space-y-2 mb-4">
+                  <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <svg className="h-4 w-4 text-red-500 dark:text-red-400 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    All team information
+                  </li>
+                  <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <svg className="h-4 w-4 text-red-500 dark:text-red-400 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Associated notes and comments
+                  </li>
+                  <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <svg className="h-4 w-4 text-red-500 dark:text-red-400 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Weekly evaluations history
+                  </li>
+                  <li className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <svg className="h-4 w-4 text-red-500 dark:text-red-400 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Team member assignments
+                  </li>
+                </ul>
+                
+                <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                  This action cannot be undone.
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTeam(null)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 dark:focus:ring-offset-gray-900 transition-all"
+                  disabled={formLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteConfirm}
+                  disabled={formLoading}
+                  className="px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 dark:from-red-700 dark:to-pink-800 dark:hover:from-red-600 dark:hover:to-pink-700 text-white text-sm font-medium rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {formLoading ? (
+                    <span className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Deleting...
+                    </span>
+                  ) : (
+                    'Delete'
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Loading Overlay */}
+            {formLoading && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 dark:border-red-400 mx-auto"></div>
+                  <p className="mt-4 text-gray-700 dark:text-gray-300 font-medium">
+                    Deleting team...
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    )
   }
 
   if (viewingTeam) {
@@ -331,6 +676,12 @@ export default function TeamsManagement() {
               </div>
             </div>
           </div>
+
+          {/* Team Form Modal */}
+          <TeamFormModal />
+
+          {/* Delete Confirmation Modal */}
+          <DeleteConfirmationModal />
         </div>
       </div>
     )
@@ -351,17 +702,15 @@ export default function TeamsManagement() {
               </p>
             </div>
             
-            {!showForm && (
-              <button
-                onClick={handleCreate}
-                className="group inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
-              >
-                <svg className="mr-2 h-5 w-5 transform group-hover:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Team
-              </button>
-            )}
+            <button
+              onClick={handleCreate}
+              className="group inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+            >
+              <svg className="mr-2 h-5 w-5 transform group-hover:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Team
+            </button>
           </div>
 
           {/* Stats */}
@@ -420,8 +769,8 @@ export default function TeamsManagement() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Teams</p>
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{teams.filter(t => t.is_active !== false).length}</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Teams</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{teams.length}</p>
                 </div>
               </div>
             </div>
@@ -450,30 +799,6 @@ export default function TeamsManagement() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="font-semibold">{error}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Create/Edit Form */}
-        {showForm && (
-          <div className="mb-8 animate-slide-down">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl dark:shadow-3xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="px-8 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800">
-                <h2 className="text-2xl font-bold text-white">
-                  {editingTeam ? 'Edit Team' : 'Create New Team'}
-                </h2>
-                <p className="text-indigo-100 dark:text-indigo-300 mt-1">
-                  {editingTeam ? 'Update team information' : 'Add a new team to your organization'}
-                </p>
-              </div>
-              <div className="p-8">
-                <TeamForm
-                  team={editingTeam}
-                  onSubmit={handleSubmit}
-                  onCancel={handleCancelForm}
-                  loading={formLoading}
-                />
               </div>
             </div>
           </div>
@@ -550,12 +875,6 @@ export default function TeamsManagement() {
                             year: 'numeric' 
                           })}
                         </div>
-                        
-                        {team.is_active === false && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300">
-                            Inactive
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -600,22 +919,11 @@ export default function TeamsManagement() {
           </div>
         )}
 
-        {/* Delete Confirmation Dialog */}
-        <DeleteConfirmation
-          isOpen={!!deleteTeam}
-          onClose={() => setDeleteTeam(null)}
-          onConfirm={handleDeleteConfirm}
-          title="Delete Team"
-          message="Are you sure you want to delete this team? This action cannot be undone and will permanently delete:"
-          items={[
-            "All team information",
-            "Associated notes and comments",
-            "Weekly evaluations history",
-            "Team member assignments"
-          ]}
-          itemName={deleteTeam?.name}
-          loading={formLoading}
-        />
+        {/* Team Form Modal */}
+        <TeamFormModal />
+
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmationModal />
       </div>
     </div>
   )

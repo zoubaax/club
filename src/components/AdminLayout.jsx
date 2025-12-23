@@ -16,14 +16,30 @@ export default function AdminLayout() {
   }, [isAdmin, loading, navigate])
 
   const handleSignOut = async () => {
-    await signOut()
-    navigate('/admin/login', { replace: true })
+    try {
+      const result = await signOut()
+      if (result.success) {
+        navigate('/admin/login', { replace: true })
+      } else {
+        console.error('Sign out failed:', result.error)
+        // Still navigate to login even if signOut had an error
+        // to prevent user from being stuck
+        navigate('/admin/login', { replace: true })
+      }
+    } catch (error) {
+      console.error('Sign out error:', error)
+      // Navigate to login even on error to prevent user from being stuck
+      navigate('/admin/login', { replace: true })
+    }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
       </div>
     )
   }

@@ -11,25 +11,104 @@ export function AuthProvider({ children }) {
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    // Check initial session
-    checkSession()
+    let mounted = true
+    let sessionChecked = false
 
-    // Listen for auth changes
+    // Check initial session
+    const initializeAuth = async () => {
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
+
+        if (!mounted) return
+
+        if (sessionError) {
+          console.error('Error getting session:', sessionError)
+          setUser(null)
+          setAdmin(null)
+          setIsAdmin(false)
+          setLoading(false)
+          sessionChecked = true
+          return
+        }
+
+        if (session?.user) {
+          setUser(session.user)
+          // Don't await - let it run in background, loading will be set to false regardless
+          checkAdminStatus(session.user.id).catch(err => {
+            console.error('Background admin check failed:', err)
+          })
+        } else {
+          setUser(null)
+          setAdmin(null)
+          setIsAdmin(false)
+        }
+      } catch (error) {
+        console.error('Error checking session:', error)
+        if (mounted) {
+          setUser(null)
+          setAdmin(null)
+          setIsAdmin(false)
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false)
+          sessionChecked = true
+        }
+      }
+    }
+
+    initializeAuth()
+
+    // Listen for auth changes (but only after initial check)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setUser(session.user)
-        await checkAdminStatus(session.user.id)
-      } else {
-        setUser(null)
-        setAdmin(null)
-        setIsAdmin(false)
+      // Skip the initial SIGNED_IN event if we already checked the session
+      if (!sessionChecked && event === 'SIGNED_IN') {
+        return
       }
-      setLoading(false)
+
+      try {
+        if (session?.user) {
+          setUser(session.user)
+          // Don't await - let it run in background
+          checkAdminStatus(session.user.id).catch(err => {
+            console.error('Background admin check failed:', err)
+          })
+        } else {
+          setUser(null)
+          setAdmin(null)
+          setIsAdmin(false)
+        }
+      } catch (error) {
+        console.error('Error in auth state change:', error)
+        if (mounted) {
+          setUser(null)
+          setAdmin(null)
+          setIsAdmin(false)
+        }
+      } finally {
+        if (mounted && sessionChecked) {
+          setLoading(false)
+        }
+      }
     })
 
+    // Fallback timeout to ensure loading never gets stuck
+    const timeout = setTimeout(() => {
+      if (mounted && !sessionChecked) {
+        console.warn('Auth initialization timeout, forcing loading to false')
+        setLoading(false)
+        sessionChecked = true
+      }
+    }, 5000)
+
     return () => {
+      mounted = false
+      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [])
@@ -38,7 +117,16 @@ export function AuthProvider({ children }) {
     try {
       const {
         data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession()
+
+      if (sessionError) {
+        console.error('Error getting session:', sessionError)
+        setUser(null)
+        setAdmin(null)
+        setIsAdmin(false)
+        return
+      }
 
       if (session?.user) {
         setUser(session.user)
@@ -53,8 +141,6 @@ export function AuthProvider({ children }) {
       setUser(null)
       setAdmin(null)
       setIsAdmin(false)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -64,8 +150,13 @@ export function AuthProvider({ children }) {
       setIsAdmin(adminStatus)
 
       if (adminStatus) {
-        const adminData = await getCurrentAdmin()
-        setAdmin(adminData)
+        try {
+          const adminData = await getCurrentAdmin()
+          setAdmin(adminData)
+        } catch (err) {
+          console.error('Error fetching admin data:', err)
+          setAdmin(null)
+        }
       } else {
         setAdmin(null)
       }

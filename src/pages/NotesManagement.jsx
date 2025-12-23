@@ -1,10 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAllNotes } from '../hooks/useAllNotes'
 import { useTeams } from '../hooks/useTeams'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import NoteForm from '../components/NoteForm'
-import NotePreview from '../components/NotePreview'
 import DeleteConfirmation from '../components/DeleteConfirmation'
 
 export default function NotesManagement() {
@@ -14,7 +12,7 @@ export default function NotesManagement() {
   
   const [editingNote, setEditingNote] = useState(null)
   const [previewNote, setPreviewNote] = useState(null)
-  const [showForm, setShowForm] = useState(false)
+  const [showFormModal, setShowFormModal] = useState(false)
   const [deleteNote, setDeleteNote] = useState(null)
   const [formLoading, setFormLoading] = useState(false)
   const [error, setError] = useState('')
@@ -29,6 +27,17 @@ export default function NotesManagement() {
   const [selectedNotes, setSelectedNotes] = useState(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
+  // Separate loading state for delete operations
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Form data
+  const [formData, setFormData] = useState({
+    content: '',
+    category: '',
+    team_id: '',
+    created_by: null
+  })
+
   // Get unique categories from notes
   const categories = useMemo(() => {
     const cats = new Set()
@@ -37,6 +46,44 @@ export default function NotesManagement() {
     })
     return Array.from(cats).sort()
   }, [notes])
+
+  // Initialize form when editing note changes
+  useEffect(() => {
+    if (editingNote) {
+      setFormData({
+        content: editingNote.content || '',
+        category: editingNote.category || '',
+        team_id: editingNote.team_id || '',
+        created_by: editingNote.created_by
+      })
+    } else {
+      setFormData({
+        content: '',
+        category: '',
+        team_id: '',
+        created_by: user?.id || null
+      })
+    }
+  }, [editingNote, user?.id])
+
+  // Handle escape key for modal
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && showFormModal) {
+        handleCancelForm()
+      }
+    }
+    
+    if (showFormModal) {
+      document.addEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'hidden'
+    }
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'unset'
+    }
+  }, [showFormModal])
 
   // Filter notes
   const filteredNotes = useMemo(() => {
@@ -55,7 +102,7 @@ export default function NotesManagement() {
   const handleCreate = () => {
     setEditingNote(null)
     setPreviewNote(null)
-    setShowForm(true)
+    setShowFormModal(true)
     setError('')
     setSuccess('')
   }
@@ -63,19 +110,34 @@ export default function NotesManagement() {
   const handleEdit = (note) => {
     setEditingNote(note)
     setPreviewNote(null)
-    setShowForm(true)
+    setShowFormModal(true)
     setError('')
     setSuccess('')
   }
 
   const handlePreview = (note) => {
     const team = teams.find(t => t.id === note.team_id)
-    setPreviewNote({ ...note, teamName: team?.name })
-    setShowForm(false)
-    setEditingNote(null)
+    setPreviewNote({ 
+      ...note, 
+      teamName: team?.name,
+      teamColor: getTeamColor(note.team_id)
+    })
   }
 
-  const handleSubmit = async (formData) => {
+  const handleClosePreview = () => {
+    setPreviewNote(null)
+  }
+
+  const handleFormChange = (e) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
     setFormLoading(true)
     setError('')
     setSuccess('')
@@ -86,7 +148,6 @@ export default function NotesManagement() {
         const updateData = {
           content: formData.content,
           category: formData.category,
-          // Keep original team_id and created_by when editing
           team_id: editingNote.team_id,
           created_by: editingNote.created_by,
         }
@@ -110,7 +171,7 @@ export default function NotesManagement() {
       await refetch()
       
       setTimeout(() => {
-        setShowForm(false)
+        setShowFormModal(false)
         setEditingNote(null)
         setPreviewNote(null)
         setSuccess('')
@@ -124,9 +185,15 @@ export default function NotesManagement() {
   }
 
   const handleDeleteConfirm = async () => {
-    if (!deleteNote) return
+    if (!deleteNote) {
+      console.error('No note selected for deletion')
+      return
+    }
 
-    setFormLoading(true)
+    const noteId = deleteNote.id
+    console.log('Delete confirmed for note:', noteId)
+    
+    setDeleteLoading(true)
     setError('')
     setSuccess('')
 
@@ -134,26 +201,32 @@ export default function NotesManagement() {
       const { error: deleteError } = await supabase
         .from('notes')
         .delete()
-        .eq('id', deleteNote.id)
+        .eq('id', noteId)
 
-      if (deleteError) throw deleteError
+      if (deleteError) {
+        console.error('Delete error:', deleteError)
+        throw deleteError
+      }
       
+      // Success - close modal and refresh
       setSuccess('Note deleted successfully!')
-      await refetch()
       setDeleteNote(null)
+      await refetch()
       setTimeout(() => setSuccess(''), 2000)
     } catch (err) {
       console.error('Error deleting note:', err)
-      setError(err.message || 'Failed to delete note')
+      const errorMessage = err.message || err.error_description || err.code || 'Failed to delete note'
+      setError(errorMessage)
+      // Keep modal open on error
     } finally {
-      setFormLoading(false)
+      setDeleteLoading(false)
     }
   }
 
   const handleBulkDelete = async () => {
     if (selectedNotes.size === 0) return
 
-    setFormLoading(true)
+    setDeleteLoading(true)
     setError('')
     setSuccess('')
 
@@ -168,14 +241,18 @@ export default function NotesManagement() {
       
       setSuccess(`${noteIds.length} note(s) deleted successfully!`)
       setSelectedNotes(new Set())
-      setBulkDeleteOpen(false)
+      setBulkDeleteOpen(false) // Close modal immediately after successful deletion
+      setError('') // Clear any previous errors
       await refetch()
       setTimeout(() => setSuccess(''), 2000)
     } catch (err) {
       console.error('Error deleting notes:', err)
-      setError(err.message || 'Failed to delete notes')
+      const errorMessage = err.message || err.error_description || err.code || 'Failed to delete notes'
+      setError(errorMessage)
+      // Don't close modal on error - keep it open so user can see the error
+      // setBulkDeleteOpen(false) is NOT called here
     } finally {
-      setFormLoading(false)
+      setDeleteLoading(false)
     }
   }
 
@@ -198,7 +275,7 @@ export default function NotesManagement() {
   }
 
   const handleCancelForm = () => {
-    setShowForm(false)
+    setShowFormModal(false)
     setEditingNote(null)
     setPreviewNote(null)
     setError('')
@@ -216,92 +293,411 @@ export default function NotesManagement() {
     return team?.name || 'Unknown Team'
   }
 
+  const getTeamColor = (teamId) => {
+    const team = teams.find(t => t.id === teamId)
+    if (!team) return 'bg-gray-500'
+    
+    // Generate consistent color based on team id
+    const colors = [
+      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
+      'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500'
+    ]
+    const index = teamId.charCodeAt(0) % colors.length
+    return colors[index]
+  }
+
+  // Note Form Modal Component
+  const NoteFormModal = () => {
+    if (!showFormModal) return null
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 z-50 transition-all duration-300 animate-fade-in"
+          onClick={handleCancelForm}
+        >
+          <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" />
+        </div>
+
+        {/* Modal */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden bg-white dark:bg-gray-900 rounded-2xl shadow-2xl dark:shadow-3xl transform transition-all duration-300 animate-modal-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-8 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {editingNote ? 'Edit Note' : 'Create New Note'}
+                  </h2>
+                  <p className="text-indigo-100 dark:text-indigo-300 mt-1">
+                    {editingNote ? 'Update your note' : 'Add a new note for any team'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCancelForm}
+                  className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                  disabled={formLoading}
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mx-8 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                <div className="flex items-center text-red-700 dark:text-red-400">
+                  <svg className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-medium">{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Form Content */}
+            <div className="p-8 overflow-y-auto max-h-[calc(90vh-180px)]">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {!editingNote && (
+                  <div>
+                    <label htmlFor="team_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Select Team *
+                    </label>
+                    <select
+                      id="team_id"
+                      name="team_id"
+                      required
+                      value={formData.team_id}
+                      onChange={handleFormChange}
+                      className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
+                      disabled={formLoading}
+                    >
+                      <option value="">Select a team...</option>
+                      {teams.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    id="category"
+                    name="category"
+                    value={formData.category}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
+                    placeholder="General, Feedback, Task, etc."
+                    disabled={formLoading}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="content" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Note Content *
+                  </label>
+                  <textarea
+                    id="content"
+                    name="content"
+                    required
+                    rows={6}
+                    value={formData.content}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all resize-none"
+                    placeholder="Write your note here..."
+                    disabled={formLoading}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={handleCancelForm}
+                    className="px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 transition-all"
+                    disabled={formLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={formLoading}
+                    className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none disabled:hover:shadow-lg"
+                  >
+                    {formLoading ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        {editingNote ? 'Updating...' : 'Creating...'}
+                      </span>
+                    ) : (
+                      editingNote ? 'Update Note' : 'Create Note'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Loading Overlay */}
+            {formLoading && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+                  <p className="mt-4 text-gray-700 dark:text-gray-300 font-medium">
+                    {editingNote ? 'Updating note...' : 'Creating note...'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // Note Preview Component
+  const NotePreviewModal = () => {
+    if (!previewNote) return null
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 z-50 transition-all duration-300 animate-fade-in"
+          onClick={handleClosePreview}
+        >
+          <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" />
+        </div>
+
+        {/* Modal */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden bg-white dark:bg-gray-900 rounded-2xl shadow-2xl dark:shadow-3xl transform transition-all duration-300 animate-modal-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-8 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Note Preview</h2>
+                  <div className="flex items-center space-x-3 mt-2">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/20 text-white">
+                      {previewNote.teamName}
+                    </span>
+                    {previewNote.category && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/10 text-white">
+                        {previewNote.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={handleClosePreview}
+                  className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Note Content */}
+            <div className="p-8 overflow-y-auto max-h-[calc(90vh-180px)]">
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-6 mb-6">
+                <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap leading-relaxed text-lg">
+                  {previewNote.content}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                <div className="flex items-center space-x-4">
+                  <span className="flex items-center">
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {new Date(previewNote.created_at).toLocaleString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                  <span className="flex items-center">
+                    <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    {previewNote.created_by ? 'By Admin' : 'Anonymous'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => {
+                      handleClosePreview()
+                      handleEdit(previewNote)
+                    }}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Edit Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
-    <div className="px-4 py-6 sm:px-0">
-      <div className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Notes Management</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Create, edit, and manage notes for all teams
-          </p>
-        </div>
-        {!showForm && (
-          <button
-            onClick={handleCreate}
-            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <svg
-              className="-ml-1 mr-2 h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-10">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+            <div className="flex-1">
+              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-3">
+                Notes Management
+              </h1>
+              <p className="text-gray-600 dark:text-gray-300 text-lg">
+                Create, edit, and manage notes for all teams
+              </p>
+            </div>
+            
+            <button
+              onClick={handleCreate}
+              className="group inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Create Note
-          </button>
+              <svg className="mr-2 h-5 w-5 transform group-hover:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Note
+            </button>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/20 rounded-2xl p-6 shadow-sm border border-indigo-100 dark:border-indigo-800/30">
+              <div className="flex items-center">
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
+                  <svg className="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Notes</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{loading ? '...' : notes.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 rounded-2xl p-6 shadow-sm border border-emerald-100 dark:border-emerald-800/30">
+              <div className="flex items-center">
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
+                  <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Teams with Notes</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                    {new Set(notes.map(n => n.team_id)).size}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 rounded-2xl p-6 shadow-sm border border-amber-100 dark:border-amber-800/30">
+              <div className="flex items-center">
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
+                  <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Categories</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{categories.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 rounded-2xl p-6 shadow-sm border border-purple-100 dark:border-purple-800/30">
+              <div className="flex items-center">
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
+                  <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Today's Notes</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                    {notes.filter(n => {
+                      const noteDate = new Date(n.created_at).toDateString()
+                      const today = new Date().toDateString()
+                      return noteDate === today
+                    }).length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        {success && (
+          <div className="mb-6 animate-slide-down">
+            <div className="rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 dark:from-green-600 dark:to-emerald-700 text-white p-4 shadow-lg">
+              <div className="flex items-center">
+                <svg className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="font-semibold">{success}</span>
+              </div>
+            </div>
+          </div>
         )}
-      </div>
 
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="mb-4 rounded-md bg-green-50 p-4">
-          <div className="text-sm text-green-800">{success}</div>
-        </div>
-      )}
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-4">
-          <div className="text-sm text-red-800">{error}</div>
-        </div>
-      )}
+        {error && (
+          <div className="mb-6 animate-slide-down">
+            <div className="rounded-xl bg-gradient-to-r from-red-500 to-pink-600 dark:from-red-600 dark:to-pink-700 text-white p-4 shadow-lg">
+              <div className="flex items-center">
+                <svg className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-semibold">{error}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {/* Create/Edit Form */}
-      {showForm && (
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            {editingNote ? 'Edit Note' : 'Create New Note'}
-          </h2>
-          <NoteForm
-            note={editingNote}
-            onSubmit={handleSubmit}
-            onCancel={handleCancelForm}
-            loading={formLoading}
-            currentUserId={user?.id}
-          />
-        </div>
-      )}
-
-      {/* Preview */}
-      {previewNote && (
-        <div className="mb-6">
-          <NotePreview note={previewNote} teamName={previewNote.teamName} />
-          <button
-            onClick={() => setPreviewNote(null)}
-            className="mt-2 text-sm text-indigo-600 hover:text-indigo-900"
-          >
-            Close Preview
-          </button>
-        </div>
-      )}
-
-      {/* Filters */}
-      {!showForm && (
-        <div className="bg-white shadow rounded-lg p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Filters */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-gray-700 p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div>
-              <label htmlFor="filter-team" className="block text-xs font-medium text-gray-700 mb-1">
+              <label htmlFor="filter-team" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Filter by Team
               </label>
               <select
                 id="filter-team"
                 value={selectedTeam}
                 onChange={(e) => setSelectedTeam(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
               >
                 <option value="">All Teams</option>
                 {teams.map((team) => (
@@ -313,14 +709,14 @@ export default function NotesManagement() {
             </div>
 
             <div>
-              <label htmlFor="filter-category" className="block text-xs font-medium text-gray-700 mb-1">
+              <label htmlFor="filter-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Filter by Category
               </label>
               <select
                 id="filter-category"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
               >
                 <option value="">All Categories</option>
                 {categories.map((cat) => (
@@ -332,7 +728,7 @@ export default function NotesManagement() {
             </div>
 
             <div>
-              <label htmlFor="filter-date" className="block text-xs font-medium text-gray-700 mb-1">
+              <label htmlFor="filter-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Filter by Date
               </label>
               <input
@@ -340,190 +736,279 @@ export default function NotesManagement() {
                 id="filter-date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
               />
             </div>
 
             <div className="flex items-end">
               <button
                 onClick={clearFilters}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                className="w-full px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 transition-all"
               >
                 Clear Filters
               </button>
             </div>
           </div>
 
-          <div className="mt-4 text-sm text-gray-600">
-            Showing {filteredNotes.length} of {notes.length} notes
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {filteredNotes.length} of {notes.length} notes
+              {selectedTeam && ` • Team: ${getTeamName(selectedTeam)}`}
+              {selectedCategory && ` • Category: ${selectedCategory}`}
+            </div>
+            {selectedNotes.size > 0 && (
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                  {selectedNotes.size} selected
+                </span>
+                <button
+                  onClick={() => setSelectedNotes(new Set())}
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setBulkDeleteOpen(true)}
+                  className="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                >
+                  Delete Selected
+                </button>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Bulk Actions */}
-      {!showForm && selectedNotes.size > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-yellow-800">
-              {selectedNotes.size} note(s) selected
-            </span>
-            <div className="space-x-2">
-              <button
-                onClick={() => setSelectedNotes(new Set())}
-                className="text-sm text-yellow-800 hover:text-yellow-900"
-              >
-                Clear Selection
-              </button>
-              <button
-                onClick={() => setBulkDeleteOpen(true)}
-                className="px-3 py-1 text-sm font-medium text-red-700 bg-red-100 rounded hover:bg-red-200"
-              >
-                Delete Selected
-              </button>
+        {/* Notes List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+              <p className="mt-4 text-gray-600 dark:text-gray-400">Loading notes...</p>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Notes List */}
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="text-gray-600">Loading notes...</div>
-        </div>
-      ) : filteredNotes.length === 0 ? (
-        <div className="bg-white shadow rounded-lg p-12 text-center">
-          <svg
-            className="mx-auto h-12 w-12 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No notes</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {notes.length === 0
-              ? 'Get started by creating a new note.'
-              : 'No notes match your filters.'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-          {/* Select All */}
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={selectedNotes.size === filteredNotes.length && filteredNotes.length > 0}
-                onChange={toggleSelectAll}
-                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Select All</span>
-            </label>
+        ) : filteredNotes.length === 0 ? (
+          <div className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-900/30 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 p-16 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full w-24 h-24 mx-auto flex items-center justify-center mb-6">
+                <svg className="h-12 w-12 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                {notes.length === 0 ? 'No notes yet' : 'No matching notes'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-8">
+                {notes.length === 0 
+                  ? 'Start documenting important information by creating your first note.'
+                  : 'Try adjusting your filters to find what you\'re looking for.'}
+              </p>
+              {notes.length === 0 && (
+                <button
+                  onClick={handleCreate}
+                  className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-600 dark:hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  <svg className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create First Note
+                </button>
+              )}
+            </div>
           </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Select All */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-4">
+              <label className="flex items-center cursor-pointer select-none">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={selectedNotes.size === filteredNotes.length && filteredNotes.length > 0}
+                    onChange={toggleSelectAll}
+                    className="sr-only"
+                  />
+                  <div className={`block w-5 h-5 border-2 rounded transition-all ${
+                    selectedNotes.size === filteredNotes.length && filteredNotes.length > 0
+                      ? 'bg-indigo-600 border-indigo-600'
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}>
+                    {selectedNotes.size === filteredNotes.length && filteredNotes.length > 0 && (
+                      <svg className="w-4 h-4 mx-auto text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <span className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Select All ({filteredNotes.length} notes)
+                </span>
+              </label>
+            </div>
 
-          <ul className="divide-y divide-gray-200">
-            {filteredNotes.map((note) => {
-              const isSelected = selectedNotes.has(note.id)
-              const team = teams.find(t => t.id === note.team_id)
-              
-              return (
-                <li key={note.id} className={isSelected ? 'bg-indigo-50' : ''}>
-                  <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0 pt-1">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleNoteSelection(note.id)}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0 ml-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2">
-                              <p className="text-sm font-medium text-indigo-600">
-                                {team?.name || 'Unknown Team'}
-                              </p>
-                              {note.category && (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                                  {note.category}
-                                </span>
-                              )}
-                              {note.created_by ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                  Admin
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                  Anonymous
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-2 text-sm text-gray-900 whitespace-pre-wrap line-clamp-3">
-                              {note.content}
-                            </p>
-                            <p className="mt-2 text-xs text-gray-500">
-                              {new Date(note.created_at).toLocaleString()}
-                            </p>
+            {/* Notes Grid */}
+            <div className="grid grid-cols-1 gap-4">
+              {filteredNotes.map((note) => {
+                const isSelected = selectedNotes.has(note.id)
+                const team = teams.find(t => t.id === note.team_id)
+                const teamColor = getTeamColor(note.team_id)
+                
+                return (
+                  <div 
+                    key={note.id} 
+                    className={`group bg-white dark:bg-gray-800 rounded-2xl shadow-lg dark:shadow-xl border-2 ${
+                      isSelected 
+                        ? 'border-indigo-500 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/10' 
+                        : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600'
+                    } overflow-hidden transition-all duration-300 hover:shadow-xl dark:hover:shadow-2xl`}
+                  >
+                    <div className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-3">
+                            <div className={`${teamColor} w-3 h-3 rounded-full`}></div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                              {team?.name || 'Unknown Team'}
+                            </h3>
+                            {note.category && (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300">
+                                {note.category}
+                              </span>
+                            )}
+                            {note.created_by ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
+                                <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                Admin
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300">
+                                Anonymous
+                              </span>
+                            )}
                           </div>
-                          <div className="ml-4 flex-shrink-0 flex space-x-2">
+                          
+                          <p className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap line-clamp-3 mb-4 leading-relaxed">
+                            {note.content}
+                          </p>
+                          
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {new Date(note.created_at).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 ml-4">
+                          <label className="flex items-center cursor-pointer select-none">
+                            <div className="relative">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleNoteSelection(note.id)}
+                                className="sr-only"
+                              />
+                              <div className={`block w-5 h-5 border-2 rounded transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 border-indigo-600'
+                                  : 'border-gray-300 dark:border-gray-600'
+                              }`}>
+                                {isSelected && (
+                                  <svg className="w-4 h-4 mx-auto text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                          
+                          <div className="flex items-center space-x-2">
                             <button
                               onClick={() => handlePreview(note)}
-                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                              className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:text-gray-400 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                              title="Preview"
                             >
-                              Preview
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
                             </button>
                             <button
                               onClick={() => handleEdit(note)}
-                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                              className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:text-gray-400 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                              title="Edit"
                             >
-                              Edit
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
                             </button>
                             <button
-                              onClick={() => setDeleteNote(note)}
-                              className="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                console.log('Delete button clicked for note:', note.id)
+                                setDeleteNote(note)
+                              }}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              title="Delete"
                             >
-                              Delete
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
                             </button>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
+                )
+              })}
+            </div>
+          </div>
+        )}
 
-      {/* Delete Confirmation Dialog */}
-      <DeleteConfirmation
-        isOpen={!!deleteNote}
-        onClose={() => setDeleteNote(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Note"
-        message="Are you sure you want to delete this note?"
-        itemName={deleteNote?.content?.substring(0, 50) + '...'}
-      />
+        {/* Note Form Modal */}
+        <NoteFormModal />
 
-      {/* Bulk Delete Confirmation Dialog */}
-      <DeleteConfirmation
-        isOpen={bulkDeleteOpen}
-        onClose={() => setBulkDeleteOpen(false)}
-        onConfirm={handleBulkDelete}
-        title="Delete Multiple Notes"
-        message={`Are you sure you want to delete ${selectedNotes.size} selected note(s)?`}
-        itemName={`${selectedNotes.size} note(s) will be permanently deleted`}
-      />
+        {/* Note Preview Modal */}
+        <NotePreviewModal />
+
+        {/* Delete Confirmation Dialog */}
+        <DeleteConfirmation
+          isOpen={!!deleteNote}
+          onClose={() => {
+            setDeleteNote(null)
+            setError('')
+          }}
+          onConfirm={handleDeleteConfirm}
+          title="Delete Note"
+          message="Are you sure you want to delete this note? This action cannot be undone."
+          itemName={deleteNote?.content?.substring(0, 50) + '...'}
+          loading={deleteLoading}
+          error={error}
+        />
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <DeleteConfirmation
+          isOpen={bulkDeleteOpen}
+          onClose={() => {
+            setBulkDeleteOpen(false)
+            setError('')
+          }}
+          onConfirm={handleBulkDelete}
+          title="Delete Multiple Notes"
+          message={`Are you sure you want to delete ${selectedNotes.size} selected note(s)? This action cannot be undone.`}
+          itemName={`${selectedNotes.size} note(s) will be permanently deleted`}
+          loading={deleteLoading}
+          error={error}
+        />
+      </div>
     </div>
   )
 }
-
