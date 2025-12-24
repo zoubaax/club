@@ -16,7 +16,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename="/uit">
         <Routes>
           {/* Public Routes */}
           <Route element={<PublicLayout />}>

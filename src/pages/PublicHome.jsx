@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useTeams } from '../hooks/useTeams'
 import { supabase } from '../lib/supabase'
 import { Link } from 'react-router-dom'
-import logo from '../assets/white.png' // Adjust extension (.png, .jpg, .svg)
+// Using public logo
+const logo = '/uit/vite.svg'
 
 export default function PublicHome() {
   const { teams, loading } = useTeams()

@@ -1,7 +1,7 @@
 import { Outlet, Link } from 'react-router-dom'
 import ThemeToggle from './ThemeToggle'
-// Import your logo from assets
-import logo from '../assets/white.png' // Adjust extension (.png, .jpg, .svg)
+// Using public logo
+const logo = '/uit/vite.svg'
 
 export default function PublicLayout() {
   return (
