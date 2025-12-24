@@ -1,7 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useEffect, useState } from 'react'
-import ThemeToggle from './ThemeToggle'
 
 export default function AdminLayout() {
   const { admin, isAdmin, signOut, loading } = useAuth()
@@ -174,12 +173,6 @@ export default function AdminLayout() {
             </div>
           </div>
           
-          {/* Theme toggle in sidebar - hidden on mobile in this position */}
-          <div className="hidden lg:flex items-center justify-between mb-4">
-            <span className="text-xs text-gray-500 dark:text-gray-400">Dark Mode</span>
-            <ThemeToggle />
-          </div>
-          
           <button
             onClick={handleSignOut}
             className="w-full flex items-center justify-center px-4 py-3 text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 dark:from-indigo-500 dark:to-indigo-600 dark:hover:from-indigo-600 dark:hover:to-indigo-700 rounded-lg transition-all duration-200 active:scale-[0.98] shadow-sm hover:shadow-md"
@@ -237,16 +230,6 @@ export default function AdminLayout() {
                     {admin?.name?.split(' ')[0] || admin?.email?.split('@')[0]}
                   </p>
                 </div>
-              </div>
-              
-              {/* Theme toggle for mobile in header */}
-              <div className="lg:hidden">
-                <ThemeToggle />
-              </div>
-              
-              {/* Desktop theme toggle */}
-              <div className="hidden lg:block">
-                <ThemeToggle />
               </div>
               
               {/* Mobile sign out button */}

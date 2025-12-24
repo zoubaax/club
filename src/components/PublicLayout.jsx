@@ -1,5 +1,4 @@
 import { Outlet, Link } from 'react-router-dom'
-import ThemeToggle from './ThemeToggle'
 // Using public logo
 import logo from '../assets/logo.png';
 
@@ -35,10 +34,6 @@ export default function PublicLayout() {
                   Teams
                 </Link>
               </div>
-            </div>
-            
-            <div className="flex items-center">
-              <ThemeToggle />
             </div>
           </div>
         </div>

@@ -3,43 +3,24 @@ import { createContext, useContext, useEffect, useState } from 'react'
 const ThemeContext = createContext(null)
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
-    // Check localStorage first, then system preference
-    const savedTheme = localStorage.getItem('theme')
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      return savedTheme
-    }
-    
-    // Check system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark'
-    }
-    return 'light'
-  })
+  // Always use dark mode
+  const theme = 'dark'
 
-  // Apply theme immediately on mount and when it changes
+  // Apply dark theme immediately on mount
   useEffect(() => {
     const root = window.document.documentElement
-    // Remove both classes first
-    root.classList.remove('light', 'dark')
-    // Add the current theme class
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.add('light')
-    }
-    // Also set the data attribute for better compatibility
-    root.setAttribute('data-theme', theme)
+    // Remove light class if present
+    root.classList.remove('light')
+    // Always add dark class
+    root.classList.add('dark')
+    // Set the data attribute
+    root.setAttribute('data-theme', 'dark')
     // Save to localStorage
-    localStorage.setItem('theme', theme)
-  }, [theme])
-
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light')
-  }
+    localStorage.setItem('theme', 'dark')
+  }, [])
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme }}>
       {children}
     </ThemeContext.Provider>
   )
