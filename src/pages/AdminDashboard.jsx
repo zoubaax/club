@@ -395,18 +395,30 @@ export default function AdminDashboard() {
                     return 0
                   })
                   
-                  const teamsWithRanking = sortedTeams.map((team, index) => {
-                    let rank = index + 1
+                  // Filter teams with scores first
+                  const teamsWithScores = sortedTeams.filter(team => team.score !== null && team.score !== undefined)
+                  
+                  // Build teams with ranking incrementally
+                  const teamsWithRanking = []
+                  let currentRank = 1
+                  teamsWithScores.forEach((team, index) => {
+                    let rank = currentRank
+                    // Check if this team has the same score as the previous team
                     if (index > 0 && 
                         team.score !== null && 
                         team.score !== undefined &&
-                        sortedTeams[index - 1].score !== null &&
-                        sortedTeams[index - 1].score !== undefined &&
-                        team.score === sortedTeams[index - 1].score) {
+                        teamsWithScores[index - 1].score !== null &&
+                        teamsWithScores[index - 1].score !== undefined &&
+                        team.score === teamsWithScores[index - 1].score) {
+                      // Use the same rank as the previous team
                       rank = teamsWithRanking[index - 1].rank
+                    } else {
+                      // New rank
+                      currentRank = index + 1
+                      rank = currentRank
                     }
-                    return { ...team, rank }
-                  }).filter(team => team.score !== null && team.score !== undefined)
+                    teamsWithRanking.push({ ...team, rank })
+                  })
                   
                   if (teamsWithRanking.length === 0) {
                     return (

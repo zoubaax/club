@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useTeams } from '../hooks/useTeams'
 import { Link } from 'react-router-dom'
+import { 
+  FaUsers, 
+  FaFileAlt, 
+  FaChartBar, 
+  FaTrophy, 
+  FaCheckCircle,
+  FaCalendarAlt,
+  FaArrowRight
+} from 'react-icons/fa'
 
 export default function PublicTeams() {
   const { teams, loading } = useTeams()
@@ -15,26 +24,43 @@ export default function PublicTeams() {
     return 0
   })
 
+  // Filter teams with scores first
+  const teamsWithScores = sortedTeams.filter(team => team.score !== null && team.score !== undefined)
+  
+  // Build teams with ranking incrementally
   const teamsWithRanking = []
   let currentRank = 1
-  sortedTeams.forEach((team, index) => {
-    let rank = null
-    if (team.score !== null && team.score !== undefined) {
-      if (index > 0 && 
-          sortedTeams[index - 1].score !== null &&
-          sortedTeams[index - 1].score !== undefined &&
-          team.score === sortedTeams[index - 1].score) {
-        rank = teamsWithRanking[index - 1].rank
-      } else {
-        rank = currentRank
-        currentRank++
-      }
+  teamsWithScores.forEach((team, index) => {
+    let rank = currentRank
+    // Check if this team has the same score as the previous team
+    if (index > 0 && 
+        team.score !== null && 
+        team.score !== undefined &&
+        teamsWithScores[index - 1].score !== null &&
+        teamsWithScores[index - 1].score !== undefined &&
+        team.score === teamsWithScores[index - 1].score) {
+      // Use the same rank as the previous team
+      rank = teamsWithRanking[index - 1].rank
+    } else {
+      // New rank
+      currentRank = index + 1
+      rank = currentRank
     }
     teamsWithRanking.push({ ...team, rank })
   })
+  
+  // Add teams without scores (they won't have ranks)
+  sortedTeams.forEach(team => {
+    if (team.score === null || team.score === undefined) {
+      teamsWithRanking.push({ ...team, rank: null })
+    }
+  })
 
-  // Top teams for banner
-  const topTeams = teamsWithRanking.filter(t => t.score !== null && t.score !== undefined).slice(0, 3)
+  // Top teams for banner - sorted by rank to ensure 1, 2, 3 order
+  const topTeams = teamsWithRanking
+    .filter(t => t.score !== null && t.score !== undefined && t.rank !== null)
+    .sort((a, b) => a.rank - b.rank) // Sort by rank to ensure 1, 2, 3 order
+    .slice(0, 3)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950 px-4 py-8 sm:px-6 lg:px-8">
@@ -57,23 +83,36 @@ export default function PublicTeams() {
             <div className="mb-8 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 dark:from-amber-900/20 dark:via-yellow-900/20 dark:to-amber-900/20 rounded-2xl border-2 border-amber-200 dark:border-amber-800 p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center">
-                  <svg className="h-8 w-8 text-amber-600 dark:text-amber-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
+                  <FaTrophy className="h-8 w-8 text-amber-600 dark:text-amber-400 mr-3" />
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Top Teams Leaderboard</h2>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {topTeams.map((team) => (
-                  <div key={team.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-amber-200 dark:border-amber-800 shadow-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                {topTeams.map((team) => {
+                  // Determine order: rank 1 in middle, rank 2 on left, rank 3 on right
+                  let orderClass = ''
+                  if (team.rank === 1) {
+                    orderClass = 'md:order-2' // Middle
+                  } else if (team.rank === 2) {
+                    orderClass = 'md:order-1' // Left
+                  } else if (team.rank === 3) {
+                    orderClass = 'md:order-3' // Right
+                  }
+                  
+                  return (
+                  <div key={team.id} className={`bg-white dark:bg-gray-800 rounded-xl border border-amber-200 dark:border-amber-800 shadow-sm ${orderClass} ${
+                    team.rank === 1 
+                      ? 'p-6 md:-mt-4 md:transform md:scale-105 shadow-lg' 
+                      : 'p-4'
+                  }`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
+                        <div className={`rounded-lg flex items-center justify-center font-bold ${
                           team.rank === 1 
-                            ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' 
+                            ? 'w-10 h-10 text-base bg-gradient-to-br from-yellow-400 to-amber-500 text-white' 
                             : team.rank === 2
-                            ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
-                            : 'bg-gradient-to-br from-amber-600 to-amber-700 text-white'
+                            ? 'w-8 h-8 text-sm bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
+                            : 'w-8 h-8 text-sm bg-gradient-to-br from-amber-600 to-amber-700 text-white'
                         }`}>
                           {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : '🥉'}
                         </div>
@@ -81,20 +120,27 @@ export default function PublicTeams() {
                           <img
                             src={team.logo_url}
                             alt={`${team.name} logo`}
-                            className="h-8 w-8 object-cover rounded-lg border border-amber-200 dark:border-amber-800 flex-shrink-0"
+                            className={`object-cover rounded-lg border border-amber-200 dark:border-amber-800 flex-shrink-0 ${
+                              team.rank === 1 ? 'h-10 w-10' : 'h-8 w-8'
+                            }`}
                             onError={(e) => {
                               e.target.style.display = 'none'
                             }}
                           />
                         ) : null}
                       </div>
-                      <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                      <span className={`font-bold text-amber-600 dark:text-amber-400 ${
+                        team.rank === 1 ? 'text-xl' : 'text-lg'
+                      }`}>
                         {Math.round(parseFloat(team.score))}
                       </span>
                     </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">{team.name}</h3>
+                    <h3 className={`font-semibold text-gray-900 dark:text-white truncate ${
+                      team.rank === 1 ? 'text-lg' : 'text-base'
+                    }`}>{team.name}</h3>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -104,9 +150,7 @@ export default function PublicTeams() {
             <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/20 rounded-2xl p-6 shadow-sm border border-indigo-100 dark:border-indigo-800/30">
               <div className="flex items-center">
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
-                  <svg className="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
+                  <FaUsers className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Teams</p>
@@ -118,9 +162,7 @@ export default function PublicTeams() {
             <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 rounded-2xl p-6 shadow-sm border border-emerald-100 dark:border-emerald-800/30">
               <div className="flex items-center">
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
-                  <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <FaFileAlt className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Teams with Scores</p>
@@ -134,9 +176,7 @@ export default function PublicTeams() {
             <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 rounded-2xl p-6 shadow-sm border border-amber-100 dark:border-amber-800/30">
               <div className="flex items-center">
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
-                  <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
+                  <FaChartBar className="h-6 w-6 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Average Score</p>
@@ -155,9 +195,7 @@ export default function PublicTeams() {
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 rounded-2xl p-6 shadow-sm border border-purple-100 dark:border-purple-800/30">
               <div className="flex items-center">
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm mr-4">
-                  <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
+                  <FaCheckCircle className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Top Score</p>
@@ -182,9 +220,7 @@ export default function PublicTeams() {
           <div className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-900/30 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 p-16 text-center">
             <div className="max-w-md mx-auto">
               <div className="p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full w-24 h-24 mx-auto flex items-center justify-center mb-6">
-                <svg className="h-12 w-12 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+                <FaUsers className="h-12 w-12 text-indigo-600 dark:text-indigo-400" />
               </div>
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">No teams yet</h3>
               <p className="text-gray-600 dark:text-gray-300">
@@ -229,9 +265,7 @@ export default function PublicTeams() {
                           />
                         ) : null}
                         <div className={`p-2 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-xl shadow-sm flex-shrink-0 ${team.logo_url ? 'hidden' : ''}`}>
-                          <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                          </svg>
+                          <FaUsers className="h-6 w-6 text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="text-xl font-bold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors truncate">
@@ -249,9 +283,7 @@ export default function PublicTeams() {
                       {team.score !== null && team.score !== undefined && (
                         <div className="mb-4">
                           <div className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
-                            <svg className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                            </svg>
+                            <FaTrophy className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-2" />
                             <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
                               Score: {Math.round(parseFloat(team.score))}
                             </span>
@@ -261,9 +293,7 @@ export default function PublicTeams() {
                       
                       <div className="flex flex-wrap items-center gap-3 mb-4">
                         <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                          <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
+                          <FaCalendarAlt className="mr-1.5 h-4 w-4" />
                           {new Date(team.created_at).toLocaleDateString('en-US', { 
                             month: 'short', 
                             day: 'numeric', 
@@ -278,9 +308,7 @@ export default function PublicTeams() {
                     <div className="flex items-center justify-between">
                       <span className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors">
                         View Details
-                        <svg className="ml-1.5 h-4 w-4 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                        </svg>
+                        <FaArrowRight className="ml-1.5 h-4 w-4 transform group-hover:translate-x-1 transition-transform" />
                       </span>
                     </div>
                   </div>
