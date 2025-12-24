@@ -490,7 +490,7 @@ export default function PublicHome() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-16 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 relative overflow-hidden">
+      {/* <section className="py-16 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 relative overflow-hidden">
         <div className="absolute inset-0 bg-grid-gray-800 [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)]" />
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
         
@@ -518,7 +518,7 @@ export default function PublicHome() {
             </Link>
           </div>
         </div>
-      </section>
+      </section> */}
     </div>
   )
 }
