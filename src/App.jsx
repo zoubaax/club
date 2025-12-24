@@ -6,6 +6,7 @@ import AdminLayout from './components/AdminLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './components/LoginPage'
 import PublicHome from './pages/PublicHome'
+import PublicTeams from './pages/PublicTeams'
 import TeamDetail from './pages/TeamDetail'
 import AdminDashboard from './pages/AdminDashboard'
 import TeamsManagement from './pages/TeamsManagement'
@@ -21,7 +22,7 @@ function App() {
           {/* Public Routes */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<PublicHome />} />
-            <Route path="/teams" element={<PublicHome />} />
+            <Route path="/teams" element={<PublicTeams />} />
             <Route path="/teams/:teamId" element={<TeamDetail />} />
           </Route>
 

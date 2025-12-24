@@ -73,7 +73,7 @@ export default function TeamDetail() {
                   <div>
                     <p className="text-xs text-white/80 font-medium uppercase tracking-wide">Score</p>
                     <p className="text-2xl font-bold text-white">
-                      {parseFloat(team.score).toFixed(2)}
+                      {Math.round(parseFloat(team.score))}
                     </p>
                   </div>
                 </div>

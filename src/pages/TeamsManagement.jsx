@@ -4,6 +4,7 @@ import { useNotes } from '../hooks/useNotes'
 import { useWeeklyEvaluations } from '../hooks/useWeeklyEvaluations'
 import { useTeamMembers } from '../hooks/useTeamMembers'
 import { supabase } from '../lib/supabase'
+import { uploadTeamLogo, deleteTeamLogo } from '../utils/uploadLogo'
 
 // Move TeamFormModal outside the main component
 const TeamFormModal = ({ 
@@ -118,6 +119,7 @@ const TeamFormModal = ({
                   name="score"
                   step="0.01"
                   min="0"
+                  max="99999999.99"
                   value={formData.score}
                   onChange={handleFormChange}
                   className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-all"
@@ -125,7 +127,62 @@ const TeamFormModal = ({
                   disabled={formLoading}
                   key={`score-${editingTeam?.id || 'new'}`}
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional numeric score for the team</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional numeric score for the team (max: 99,999,999.99)</p>
+              </div>
+
+              <div>
+                <label htmlFor="logo" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Team Logo
+                </label>
+                <div className="space-y-3">
+                  {formData.logoPreview && (
+                    <div className="relative inline-block">
+                      <img
+                        src={formData.logoPreview}
+                        alt="Logo preview"
+                        className="h-24 w-24 object-cover rounded-xl border-2 border-gray-300 dark:border-gray-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            logo: null,
+                            logoPreview: editingTeam?.logo_url || null
+                          }))
+                        }}
+                        className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                        disabled={formLoading}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    id="logo"
+                    name="logo"
+                    accept="image/*"
+                    onChange={handleFormChange}
+                    className="block w-full text-sm text-gray-500 dark:text-gray-400
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-lg file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-indigo-50 file:text-indigo-700
+                      hover:file:bg-indigo-100
+                      dark:file:bg-indigo-900/30 dark:file:text-indigo-300
+                      dark:hover:file:bg-indigo-900/50
+                      file:cursor-pointer
+                      cursor-pointer
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={formLoading}
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Upload a team logo (max 5MB). Only admins can upload logos.
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -348,7 +405,9 @@ export default function TeamsManagement() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    score: ''
+    score: '',
+    logo: null,
+    logoPreview: null
   })
 
   const { notes: teamNotes, loading: notesLoading } = useNotes(viewingTeam?.id)
@@ -357,6 +416,9 @@ export default function TeamsManagement() {
   const [showMemberForm, setShowMemberForm] = useState(false)
   const [memberFormData, setMemberFormData] = useState({ name: '', email: '', role: '' })
   const [memberFormLoading, setMemberFormLoading] = useState(false)
+  const [editingScoreTeamId, setEditingScoreTeamId] = useState(null)
+  const [scoreInputValue, setScoreInputValue] = useState('')
+  const [scoreUpdating, setScoreUpdating] = useState(false)
 
   // Sort teams by score (descending, nulls last) and assign rankings
   const sortedTeams = [...teams].sort((a, b) => {
@@ -388,11 +450,24 @@ export default function TeamsManagement() {
 
   // Use useCallback for stable event handlers
   const handleFormChange = useCallback((e) => {
-    const { name, value, type, checked } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    const { name, value, type, checked, files } = e.target
+    if (type === 'file' && files && files[0]) {
+      const file = files[0]
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          logo: file,
+          logoPreview: reader.result
+        }))
+      }
+      reader.readAsDataURL(file)
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      }))
+    }
   }, [])
 
   const handleCancelForm = useCallback(() => {
@@ -408,13 +483,17 @@ export default function TeamsManagement() {
       setFormData({
         name: editingTeam.name || '',
         description: editingTeam.description || '',
-        score: editingTeam.score !== null && editingTeam.score !== undefined ? editingTeam.score.toString() : ''
+        score: editingTeam.score !== null && editingTeam.score !== undefined ? editingTeam.score.toString() : '',
+        logo: null,
+        logoPreview: editingTeam.logo_url || null
       })
     } else {
       setFormData({
         name: '',
         description: '',
-        score: ''
+        score: '',
+        logo: null,
+        logoPreview: null
       })
     }
   }, [editingTeam])
@@ -469,10 +548,48 @@ export default function TeamsManagement() {
     setSuccess('')
 
     try {
+      let logoUrl = editingTeam?.logo_url || null
+
+      // Upload logo if a new one was selected
+      if (formData.logo) {
+        // Use existing team ID or generate a temporary UUID for file naming
+        const teamId = editingTeam?.id || `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const uploadResult = await uploadTeamLogo(formData.logo, teamId)
+        
+        if (uploadResult.error) {
+          throw new Error(uploadResult.error)
+        }
+
+        // Delete old logo if updating
+        if (editingTeam?.logo_url && editingTeam.logo_url !== uploadResult.url) {
+          await deleteTeamLogo(editingTeam.logo_url)
+        }
+
+        logoUrl = uploadResult.url
+      }
+
+      // Validate score if provided
+      let scoreValue = null
+      if (formData.score) {
+        const parsedScore = parseFloat(formData.score)
+        const MAX_SCORE = 99999999.99
+        if (isNaN(parsedScore)) {
+          throw new Error('Invalid score value')
+        }
+        if (parsedScore < 0) {
+          throw new Error('Score cannot be negative')
+        }
+        if (parsedScore > MAX_SCORE) {
+          throw new Error(`Score cannot exceed ${MAX_SCORE.toLocaleString()}`)
+        }
+        scoreValue = parsedScore
+      }
+
       const validData = {
         name: formData.name,
         description: formData.description || null,
-        score: formData.score ? parseFloat(formData.score) : null
+        score: scoreValue,
+        logo_url: logoUrl
       }
 
       if (editingTeam) {
@@ -497,6 +614,13 @@ export default function TeamsManagement() {
       setTimeout(() => {
         setShowFormModal(false)
         setEditingTeam(null)
+        setFormData({
+          name: '',
+          description: '',
+          score: '',
+          logo: null,
+          logoPreview: null
+        })
         setSuccess('')
       }, 1500)
     } catch (err) {
@@ -535,6 +659,85 @@ export default function TeamsManagement() {
     }
   }
 
+  const handleQuickScoreEdit = (team) => {
+    setEditingScoreTeamId(team.id)
+    setScoreInputValue('') // Start with empty input for adding to score
+  }
+
+  const handleQuickScoreCancel = () => {
+    setEditingScoreTeamId(null)
+    setScoreInputValue('')
+  }
+
+  const handleQuickScoreUpdate = async (teamId) => {
+    setScoreUpdating(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      // Get current team to access existing score
+      const currentTeam = teams.find(t => t.id === teamId)
+      const currentScore = currentTeam?.score !== null && currentTeam?.score !== undefined ? parseFloat(currentTeam.score) : 0
+      
+      const addValue = scoreInputValue.trim() === '' ? 0 : parseFloat(scoreInputValue)
+      
+      if (scoreInputValue.trim() !== '' && (isNaN(addValue))) {
+        setError('Please enter a valid number')
+        setScoreUpdating(false)
+        return
+      }
+
+      // Calculate new score by adding to existing
+      const newScore = currentScore + addValue
+
+      // Validate score doesn't exceed maximum (99,999,999.99)
+      const MAX_SCORE = 99999999.99
+      if (newScore > MAX_SCORE) {
+        setError(`Score cannot exceed ${MAX_SCORE.toLocaleString()}`)
+        setScoreUpdating(false)
+        return
+      }
+
+      if (newScore < 0) {
+        setError('Score cannot be negative')
+        setScoreUpdating(false)
+        return
+      }
+
+      const { error: updateError } = await supabase
+        .from('teams')
+        .update({ score: newScore })
+        .eq('id', teamId)
+
+      if (updateError) throw updateError
+      
+      setSuccess(`Score updated! Added ${addValue >= 0 ? '+' : ''}${Math.round(addValue)}. New score: ${Math.round(newScore)}`)
+      await refetch()
+      
+      // Update viewingTeam if it's currently being viewed
+      if (viewingTeam && viewingTeam.id === teamId) {
+        const { data: updatedTeam } = await supabase
+          .from('teams')
+          .select('*')
+          .eq('id', teamId)
+          .single()
+        if (updatedTeam) {
+          setViewingTeam(updatedTeam)
+        }
+      }
+      
+      setEditingScoreTeamId(null)
+      setScoreInputValue('')
+      
+      setTimeout(() => setSuccess(''), 2000)
+    } catch (err) {
+      console.error('Error updating score:', err)
+      setError(err.message || 'Failed to update score')
+    } finally {
+      setScoreUpdating(false)
+    }
+  }
+
   if (viewingTeam) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950 px-4 py-6 sm:px-6 lg:px-8">
@@ -554,7 +757,18 @@ export default function TeamsManagement() {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-2xl shadow-lg">
+                  {viewingTeam.logo_url ? (
+                    <img
+                      src={viewingTeam.logo_url}
+                      alt={`${viewingTeam.name} logo`}
+                      className="h-16 w-16 object-cover rounded-2xl shadow-lg border-2 border-gray-200 dark:border-gray-700"
+                      onError={(e) => {
+                        e.target.style.display = 'none'
+                        e.target.nextSibling.style.display = 'flex'
+                      }}
+                    />
+                  ) : null}
+                  <div className={`p-3 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-2xl shadow-lg ${viewingTeam.logo_url ? 'hidden' : ''}`}>
                     <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
@@ -566,15 +780,77 @@ export default function TeamsManagement() {
                         {viewingTeam.description}
                       </p>
                     )}
-                    {viewingTeam.score !== null && viewingTeam.score !== undefined && (
+                    {editingScoreTeamId === viewingTeam.id ? (
                       <div className="mt-3">
-                        <div className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
-                          <svg className="h-5 w-5 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                          </svg>
-                          <span className="text-base font-bold text-amber-800 dark:text-amber-300">
-                            Score: {parseFloat(viewingTeam.score).toFixed(2)}
-                          </span>
+                        <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                          Current score: <span className="font-semibold">{viewingTeam.score !== null && viewingTeam.score !== undefined ? Math.round(parseFloat(viewingTeam.score)) : '0'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={scoreInputValue}
+                              onChange={(e) => setScoreInputValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleQuickScoreUpdate(viewingTeam.id)
+                                } else if (e.key === 'Escape') {
+                                  handleQuickScoreCancel()
+                                }
+                              }}
+                              className="w-full px-4 py-2 text-base bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-xl focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 focus:border-amber-500 dark:focus:border-amber-400 text-gray-900 dark:text-white"
+                              placeholder="Enter amount to add (e.g., +5.5 or -2.0)"
+                              autoFocus
+                              disabled={scoreUpdating}
+                            />
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter positive number to add, negative to subtract</p>
+                          </div>
+                          <button
+                            onClick={() => handleQuickScoreUpdate(viewingTeam.id)}
+                            disabled={scoreUpdating}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Save score"
+                          >
+                            {scoreUpdating ? (
+                              <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            ) : (
+                              'Save'
+                            )}
+                          </button>
+                          <button
+                            onClick={handleQuickScoreCancel}
+                            disabled={scoreUpdating}
+                            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Cancel"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <div className="inline-flex items-center gap-2">
+                          <div className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
+                            <svg className="h-5 w-5 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                            </svg>
+                            <span className="text-base font-bold text-amber-800 dark:text-amber-300">
+                              Score: {viewingTeam.score !== null && viewingTeam.score !== undefined ? Math.round(parseFloat(viewingTeam.score)) : 'Not set'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleQuickScoreEdit(viewingTeam)}
+                            className="p-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                            title="Add to score"
+                          >
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     )}
@@ -977,7 +1253,7 @@ export default function TeamsManagement() {
                           {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : '🥉'}
                         </div>
                         <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                          {parseFloat(team.score).toFixed(2)}
+                          {Math.round(parseFloat(team.score))}
                         </span>
                       </div>
                       <h3 className="font-semibold text-gray-900 dark:text-white truncate">{team.name}</h3>
@@ -1134,7 +1410,18 @@ export default function TeamsManagement() {
                             {team.rank === 1 ? '🥇' : team.rank === 2 ? '🥈' : team.rank === 3 ? '🥉' : `#${team.rank}`}
                           </div>
                         )}
-                        <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-xl shadow-sm">
+                        {team.logo_url ? (
+                          <img
+                            src={team.logo_url}
+                            alt={`${team.name} logo`}
+                            className="h-12 w-12 object-cover rounded-xl shadow-sm border-2 border-gray-200 dark:border-gray-700 flex-shrink-0"
+                            onError={(e) => {
+                              e.target.style.display = 'none'
+                              e.target.nextSibling.style.display = 'flex'
+                            }}
+                          />
+                        ) : null}
+                        <div className={`p-2 bg-gradient-to-br from-indigo-500 to-purple-600 dark:from-indigo-600 dark:to-purple-700 rounded-xl shadow-sm flex-shrink-0 ${team.logo_url ? 'hidden' : ''}`}>
                           <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
@@ -1152,15 +1439,80 @@ export default function TeamsManagement() {
                         </p>
                       )}
                       
-                      {team.score !== null && team.score !== undefined && (
+                      {editingScoreTeamId === team.id ? (
                         <div className="mb-4">
-                          <div className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
-                            <svg className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                            </svg>
-                            <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                              Score: {parseFloat(team.score).toFixed(2)}
-                            </span>
+                          <div className="mb-2 text-xs text-gray-600 dark:text-gray-400">
+                            Current: <span className="font-semibold">{team.score !== null && team.score !== undefined ? Math.round(parseFloat(team.score)) : '0'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={scoreInputValue}
+                                onChange={(e) => setScoreInputValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleQuickScoreUpdate(team.id)
+                                  } else if (e.key === 'Escape') {
+                                    handleQuickScoreCancel()
+                                  }
+                                }}
+                                className="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 focus:border-amber-500 dark:focus:border-amber-400 text-gray-900 dark:text-white"
+                                placeholder="Add/subtract (e.g., +5 or -2)"
+                                autoFocus
+                                disabled={scoreUpdating}
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleQuickScoreUpdate(team.id)}
+                              disabled={scoreUpdating}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Save score"
+                            >
+                              {scoreUpdating ? (
+                                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                              ) : (
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={handleQuickScoreCancel}
+                              disabled={scoreUpdating}
+                              className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Cancel"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mb-4">
+                          <div className="inline-flex items-center gap-2">
+                            <div className="inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-amber-900/30 dark:to-yellow-900/30 border border-amber-200 dark:border-amber-800">
+                              <svg className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                              </svg>
+                              <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                                Score: {team.score !== null && team.score !== undefined ? Math.round(parseFloat(team.score)) : 'Not set'}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleQuickScoreEdit(team)}
+                              className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                              title="Add to score"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
                           </div>
                         </div>
                       )}

@@ -259,7 +259,7 @@ export default function PublicHome() {
                 <div>
                   <p className="text-sm text-purple-300 font-medium">Top Score</p>
                   <p className="text-3xl font-bold text-white mt-1">
-                    {stats.topTeam?.score ? parseFloat(stats.topTeam.score).toFixed(2) : 'N/A'}
+                    {stats.topTeam?.score ? Math.round(parseFloat(stats.topTeam.score)) : 'N/A'}
                   </p>
                 </div>
               </div>
@@ -317,6 +317,18 @@ export default function PublicHome() {
                         team.rank === 1 ? 'h-full flex flex-col justify-between' : ''
                       }`}>
                         <div>
+                          {team.logo_url && (
+                            <div className="mb-4 flex justify-center">
+                              <img
+                                src={team.logo_url}
+                                alt={`${team.name} logo`}
+                                className="h-20 w-20 object-cover rounded-xl border-2 border-gray-700 shadow-lg"
+                                onError={(e) => {
+                                  e.target.style.display = 'none'
+                                }}
+                              />
+                            </div>
+                          )}
                           <h3 className="text-xl font-bold text-white mb-2">{team.name}</h3>
                           {team.description && (
                             <p className="text-gray-400 text-sm mb-4 line-clamp-2">{team.description}</p>
@@ -326,7 +338,7 @@ export default function PublicHome() {
                         <div className="space-y-4">
                           <div className="flex items-center justify-center gap-2">
                             <span className="text-lg font-bold text-white">
-                              Score: {parseFloat(team.score).toFixed(2)}
+                              Score: {Math.round(parseFloat(team.score))}
                             </span>
                           </div>
                           
@@ -383,6 +395,16 @@ export default function PublicHome() {
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <div className="flex items-center gap-3">
+                              {team.logo_url ? (
+                                <img
+                                  src={team.logo_url}
+                                  alt={`${team.name} logo`}
+                                  className="h-12 w-12 object-cover rounded-lg border-2 border-gray-700 flex-shrink-0"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none'
+                                  }}
+                                />
+                              ) : null}
                               {team.rank && (
                                 <div className="w-10 h-10 rounded-lg bg-gray-700 flex items-center justify-center font-bold text-gray-200 group-hover:bg-gray-600 transition-colors">
                                   #{team.rank}
@@ -392,7 +414,7 @@ export default function PublicHome() {
                                 <h4 className="font-bold text-white group-hover:text-blue-100 transition-colors">{team.name}</h4>
                                 {team.score !== null && team.score !== undefined && (
                                   <p className="text-sm text-blue-300 font-medium">
-                                    Score: {parseFloat(team.score).toFixed(2)}
+                                    Score: {Math.round(parseFloat(team.score))}
                                   </p>
                                 )}
                               </div>

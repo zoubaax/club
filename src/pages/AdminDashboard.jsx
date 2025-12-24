@@ -439,7 +439,7 @@ export default function AdminDashboard() {
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{team.name}</h4>
                             <div className="flex items-center mt-1">
                               <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                                Score: {parseFloat(team.score).toFixed(2)}
+                                Score: {Math.round(parseFloat(team.score))}
                               </span>
                             </div>
                           </div>
