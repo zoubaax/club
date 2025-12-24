@@ -3,7 +3,7 @@ import { useTeams } from '../hooks/useTeams'
 import { supabase } from '../lib/supabase'
 import { Link } from 'react-router-dom'
 // Using public logo
-const logo = '/uit/vite.svg'
+import logo from '../assets/logo.png';
 
 export default function PublicHome() {
   const { teams, loading } = useTeams()
