@@ -195,29 +195,32 @@ export default function NotesManagement() {
     
     setDeleteLoading(true)
     setError('')
-    setSuccess('')
 
     try {
-      const { error: deleteError } = await supabase
+      const { error: deleteError, data } = await supabase
         .from('notes')
         .delete()
         .eq('id', noteId)
+        .select() // Add select to check what was deleted
+
+      console.log('Delete response:', { deleteError, data })
 
       if (deleteError) {
-        console.error('Delete error:', deleteError)
-        throw deleteError
+        console.error('Delete error details:', deleteError)
+        throw new Error(deleteError.message || 'Failed to delete note')
       }
       
       // Success - close modal and refresh
       setSuccess('Note deleted successfully!')
-      setDeleteNote(null)
       await refetch()
-      setTimeout(() => setSuccess(''), 2000)
+      
+      // Clear delete note state and error
+      setDeleteNote(null)
+      setError('')
+      
     } catch (err) {
       console.error('Error deleting note:', err)
-      const errorMessage = err.message || err.error_description || err.code || 'Failed to delete note'
-      setError(errorMessage)
-      // Keep modal open on error
+      setError(err.message || 'Failed to delete note. Please try again.')
     } finally {
       setDeleteLoading(false)
     }
@@ -232,25 +235,30 @@ export default function NotesManagement() {
 
     try {
       const noteIds = Array.from(selectedNotes)
-      const { error: deleteError } = await supabase
+      console.log('Bulk deleting note IDs:', noteIds)
+      
+      const { error: deleteError, data } = await supabase
         .from('notes')
         .delete()
         .in('id', noteIds)
+        .select()
 
-      if (deleteError) throw deleteError
+      console.log('Bulk delete response:', { deleteError, data })
+
+      if (deleteError) {
+        console.error('Bulk delete error details:', deleteError)
+        throw new Error(deleteError.message || 'Failed to delete notes')
+      }
       
       setSuccess(`${noteIds.length} note(s) deleted successfully!`)
       setSelectedNotes(new Set())
-      setBulkDeleteOpen(false) // Close modal immediately after successful deletion
-      setError('') // Clear any previous errors
+      setBulkDeleteOpen(false)
+      setError('')
+      
       await refetch()
-      setTimeout(() => setSuccess(''), 2000)
     } catch (err) {
       console.error('Error deleting notes:', err)
-      const errorMessage = err.message || err.error_description || err.code || 'Failed to delete notes'
-      setError(errorMessage)
-      // Don't close modal on error - keep it open so user can see the error
-      // setBulkDeleteOpen(false) is NOT called here
+      setError(err.message || 'Failed to delete notes. Please try again.')
     } finally {
       setDeleteLoading(false)
     }
@@ -306,6 +314,18 @@ export default function NotesManagement() {
     return colors[index]
   }
 
+  // Handle close delete modal
+  const handleCloseDeleteModal = () => {
+    setDeleteNote(null)
+    setError('')
+  }
+
+  // Handle close bulk delete modal
+  const handleCloseBulkDeleteModal = () => {
+    setBulkDeleteOpen(false)
+    setError('')
+  }
+
   // Note Form Modal Component
   const NoteFormModal = () => {
     if (!showFormModal) return null
@@ -357,6 +377,18 @@ export default function NotesManagement() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span className="font-medium">{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Success Message */}
+            {success && (
+              <div className="mx-8 mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+                <div className="flex items-center text-green-700 dark:text-green-400">
+                  <svg className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="font-medium">{success}</span>
                 </div>
               </div>
             )}
@@ -953,6 +985,8 @@ export default function NotesManagement() {
                                 e.preventDefault()
                                 e.stopPropagation()
                                 console.log('Delete button clicked for note:', note.id)
+                                setError('')
+                                setSuccess('')
                                 setDeleteNote(note)
                               }}
                               className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
@@ -982,10 +1016,7 @@ export default function NotesManagement() {
         {/* Delete Confirmation Dialog */}
         <DeleteConfirmation
           isOpen={!!deleteNote}
-          onClose={() => {
-            setDeleteNote(null)
-            setError('')
-          }}
+          onClose={handleCloseDeleteModal}
           onConfirm={handleDeleteConfirm}
           title="Delete Note"
           message="Are you sure you want to delete this note? This action cannot be undone."
@@ -997,10 +1028,7 @@ export default function NotesManagement() {
         {/* Bulk Delete Confirmation Dialog */}
         <DeleteConfirmation
           isOpen={bulkDeleteOpen}
-          onClose={() => {
-            setBulkDeleteOpen(false)
-            setError('')
-          }}
+          onClose={handleCloseBulkDeleteModal}
           onConfirm={handleBulkDelete}
           title="Delete Multiple Notes"
           message={`Are you sure you want to delete ${selectedNotes.size} selected note(s)? This action cannot be undone.`}
